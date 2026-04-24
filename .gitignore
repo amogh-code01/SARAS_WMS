@@ -1,0 +1,46 @@
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environment ───────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Database files (production data — never commit) ───────────
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
+backups/
+wms_sara_backup_*.db
+
+# ── Secret / sensitive files ──────────────────────────────────
+secret.key
+
+# ── Config with IP / deployment settings ─────────────────────
+# config.ini contains the server IP — commit config.ini.example instead
+config.ini
+
+# ── Upload / user-generated content ──────────────────────────
+uploads/
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+sara_startup.log
+build_out.txt
+build_err.txt
+
+# ── PyInstaller build artefacts ───────────────────────────────
+build/
+dist/
+*.spec.bak
+
+# ── OS files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

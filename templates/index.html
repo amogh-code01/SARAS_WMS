@@ -1,0 +1,691 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SWM V1 — Work Order Management</title><!-- Styles -->
+<link rel="stylesheet" href="/static/css/style.css">
+<!-- Chart.js (local) -->
+<script src="/static/js/vendor/chart.umd.min.js"></script>
+<script src="/static/js/vendor/socket.io.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════ LOGIN OVERLAY ═══════ -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-hex">S</div>
+      <div>
+        <div class="login-brand">SWM V1</div>
+        <div class="login-sub">Work Order System</div>
+      </div>
+    </div>
+    <div class="login-title">Sign In to Continue</div>
+    <div class="login-field">
+      <label>Select User</label>
+      <select id="login-user">
+        <option value="">— Select your name —</option>
+        <optgroup label="Administrators">
+          <option value="admin1">Admin 1</option>
+          <option value="admin2">Admin 2</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="login-pass" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" onclick="doLogin()">🔐 &nbsp;Sign In</button>
+    <div class="login-err" id="login-err">Incorrect username or password. Please try again.</div>
+    <div class="login-footer">SWM V1 · Manufacturing Work Order System</div>
+  </div>
+</div>
+
+
+<!-- ═══════════ TOPBAR ═══════════ -->
+<div class="topbar">
+  <div class="topbar-logo">
+    <div class="logo-hex">S</div>
+    <div>
+      <h1>SWM V1 &nbsp;·&nbsp; Work Order Management</h1>
+      <div class="topbar-sub">Manufacturing Production Tracking System</div>
+    </div>
+  </div>
+  <div class="tb-right">
+    <div class="prog-pill">
+      <div class="prog-ring-wrap">
+        <svg class="prog-ring" width="32" height="32" viewBox="0 0 32 32">
+          <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"  stop-color="#2563eb"/>
+              <stop offset="100%" stop-color="#10b981"/>
+            </linearGradient>
+          </defs>
+          <circle class="prog-ring-bg"  cx="16" cy="16" r="14"/>
+          <circle class="prog-ring-val" id="ring-val" cx="16" cy="16" r="14"/>
+        </svg>
+        <div class="prog-ring-text" id="ring-txt">0%</div>
+      </div>
+      <div class="prog-label">PROGRESS</div>
+    </div>
+    <div class="user-badge" id="user-badge">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div>
+        <div class="user-name" id="user-name-lbl">—</div>
+        <div class="user-role" id="user-role-lbl">—</div>
+      </div>
+    </div>
+    <button class="btn" id="btn-admin-dash" onclick="openAdminDash()" style="display:none;background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3);font-size:10px;">📊 &nbsp;Admin Dashboard</button>
+    <input type="file" id="customer-import-input" accept=".xlsx,.xlsm,.xltx,.xltm" style="display:none;">
+    <button class="btn btn-outline" id="btn-import-customers" onclick="triggerCustomerImport()" style="display:none;font-size:10px;">🧾 Import Customers</button>
+    <button class="btn btn-logout" onclick="doLogout()">⏻ &nbsp;Log Out</button>
+    <button class="btn btn-outline" onclick="resetForm()">↺ Reset</button>
+    <button class="btn btn-outline" onclick="exportCSV()">⬇ Export</button>
+  </div>
+</div>
+
+<!-- ═══════════ ADMIN DASHBOARD MODAL ═══════════ -->
+<div id="admin-dash-overlay" style="display:none;position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);" onclick="if(event.target===this)closeAdminDash()"></div>
+<div id="admin-dash-panel" style="display:none;position:fixed;top:0;right:-100%;width:88vw;max-width:1100px;height:100vh;background:var(--bg);z-index:5001;overflow-y:auto;box-shadow:-8px 0 40px rgba(0,0,0,.25);transition:right .3s cubic-bezier(.4,0,.2,1);">
+
+  <!-- Header -->
+  <div style="background:var(--info-dark);padding:16px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:1;border-bottom:1.5px solid var(--accent);">
+    <div style="font-family:var(--font-hd);font-size:14px;font-weight:700;letter-spacing:2px;color:#fbbf24;text-transform:uppercase;">📊 Admin Dashboard</div>
+    <div id="ad-subtitle" style="font-family:var(--font-mn);font-size:10px;color:rgba(255,255,255,.35);letter-spacing:1px;margin-left:4px;"></div>
+    <!-- Tabs -->
+    <div style="display:flex;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:3px;margin-left:16px;">
+      <button id="ad-tab-users" onclick="adSwitchTab('users')" style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:5px 14px;border-radius:16px;border:none;cursor:pointer;background:var(--accent);color:#fff;">👥 Users</button>
+      <button id="ad-tab-customers" onclick="adSwitchTab('customers')" style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:5px 14px;border-radius:16px;border:none;cursor:pointer;background:transparent;color:rgba(255,255,255,.55);">🧾 Customers</button>
+      <button id="ad-tab-um" onclick="adSwitchTab('um')" style="font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:5px 14px;border-radius:16px;border:none;cursor:pointer;background:transparent;color:rgba(255,255,255,.55);">⚙ User Mgmt</button>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <button onclick="adRefreshCurrentTab()" style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3);border-radius:4px;font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 12px;cursor:pointer;">↺ Refresh</button>
+      <button onclick="closeAdminDash()" style="background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:4px;font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 12px;cursor:pointer;">✕ Close</button>
+    </div>
+  </div>
+
+  <!-- Users Tab -->
+  <div id="ad-panel-users" style="padding:22px 24px 60px;">
+
+    <!-- Add User Form -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:18px;margin-bottom:16px;">
+      <div style="font-family:var(--font-mn);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;">➕ Add New User <span id="ad-user-limit-note" style="font-weight:400;color:var(--accent);"></span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;align-items:end;">
+        <div class="field"><label>Username (ID)</label><input type="text" id="new-user-key" placeholder="e.g. user14" style="font-family:var(--font-mn);"></div>
+        <div class="field"><label>Display Name</label><input type="text" id="new-user-name" placeholder="Full Name"></div>
+        <div class="field"><label>Role</label>
+          <select id="new-user-role"><option value="Operator">Operator</option><option value="Supervisor">Supervisor</option><option value="Administrator">Administrator</option></select>
+        </div>
+        <div class="field"><label>Password</label><input type="password" id="new-user-pass" placeholder="Set password"></div>
+        <button onclick="addNewUser()" style="background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#fff;border:none;border-radius:var(--r);padding:10px 18px;font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;white-space:nowrap;">＋ Add User</button>
+      </div>
+    </div>
+
+    <!-- User Table -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);overflow:hidden;margin-bottom:16px;">
+      <div style="padding:13px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+        <span style="font-family:var(--font-mn);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">User Accounts</span>
+        <span id="ad-user-count" style="font-family:var(--font-mn);font-size:10px;color:var(--muted);"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:600px;">
+          <thead>
+            <tr style="background:#eef2f9;border-bottom:2px solid var(--border);">
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Name</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Username</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Role</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Sections</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ad-user-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Edit User / Assign Sections Box -->
+    <div id="ad-edit-user-box" style="display:none;background:var(--surface);border:1.5px solid var(--accent);border-radius:var(--r);box-shadow:var(--shadow-card);padding:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-family:var(--font-hd);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);" id="ad-edit-title">Edit User</div>
+        <button onclick="cancelUserEdit()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px;">
+        <div class="field"><label>Display Name</label><input type="text" id="ad-edit-name" placeholder="Full Name"></div>
+        <div class="field"><label>Role</label>
+          <select id="ad-edit-role">
+            <option value="Operator">Operator</option>
+            <option value="Supervisor">Supervisor</option>
+            <option value="Administrator">Administrator</option>
+          </select>
+        </div>
+        <div class="field"><label>New Password <span style="font-weight:400;color:var(--muted);">(blank = keep)</span></label><input type="password" id="ad-edit-pass" placeholder="Leave blank to keep"></div>
+      </div>
+      <!-- Section Assignment -->
+      <div style="font-family:var(--font-mn);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Assign Sections</div>
+      <div id="ad-section-checkboxes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:18px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="saveUserEdit()" style="background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#fff;border:none;border-radius:var(--r);padding:10px 24px;font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;">✓ Save Changes</button>
+        <button onclick="selectAllSections(true)"  style="background:var(--surface-2,#f7f9fd);color:var(--accent);border:1px solid var(--border);border-radius:var(--r);padding:10px 16px;font-family:var(--font-mn);font-size:10px;cursor:pointer;">Select All</button>
+        <button onclick="selectAllSections(false)" style="background:var(--surface-2,#f7f9fd);color:var(--muted);border:1px solid var(--border);border-radius:var(--r);padding:10px 16px;font-family:var(--font-mn);font-size:10px;cursor:pointer;">Deselect All</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Customers Tab -->
+  <div id="ad-panel-customers" style="display:none;padding:22px 24px 60px;">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:16px 18px;">
+        <div style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Total Customers</div>
+        <div id="ad-customer-total" style="font-family:var(--font-hd);font-size:24px;font-weight:700;color:var(--accent);">0</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:16px 18px;">
+        <div style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">With Code</div>
+        <div id="ad-customer-coded" style="font-family:var(--font-hd);font-size:24px;font-weight:700;color:#0f766e;">0</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:16px 18px;">
+        <div style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Without Code</div>
+        <div id="ad-customer-uncoded" style="font-family:var(--font-hd);font-size:24px;font-weight:700;color:#b45309;">0</div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:18px;margin-bottom:16px;display:flex;align-items:end;gap:12px;flex-wrap:wrap;">
+      <div class="field" style="flex:1;min-width:260px;">
+        <label>Search Customer Master</label>
+        <input type="text" id="ad-customer-search" placeholder="Search by code or name" oninput="renderCustomerAdminTable()">
+      </div>
+      <div style="font-family:var(--font-mn);font-size:10px;color:var(--muted);min-width:220px;">Excel import supports customer name only, or customer code + customer name when those columns exist.</div>
+      <button onclick="triggerCustomerImport()" style="background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#fff;border:none;border-radius:var(--r);padding:10px 18px;font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;white-space:nowrap;">🧾 Import Excel</button>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);overflow:hidden;">
+      <div style="padding:13px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+        <span style="font-family:var(--font-mn);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);">Customer Master</span>
+        <span id="ad-customer-shown" style="font-family:var(--font-mn);font-size:10px;color:var(--muted);">0 shown</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:680px;">
+          <thead>
+            <tr style="background:#eef2f9;border-bottom:2px solid var(--border);">
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">#</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Code</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Customer Name</th>
+              <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:left;">Updated</th>
+            </tr>
+          </thead>
+          <tbody id="ad-customer-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Management Tab -->
+  <div id="ad-panel-um" style="display:none;padding:22px 24px 60px;">
+<div class="page">
+
+  <!-- STATS ROW -->
+  <div id="stats-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;animation:fadeUp .3s ease both;"></div>
+
+  <!-- ADD USER -->
+  <div class="card" style="animation:fadeUp .3s ease .06s both;">
+    <div class="card-header hd-info">
+      <div class="card-header-title">➕ &nbsp;Add New User</div>
+      <span id="user-limit-note" style="font-family:var(--font-mn);font-size:10px;color:rgba(255,255,255,.5);"></span>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+        <div class="field"><label>Username (ID)</label><input type="text" id="new-key" placeholder="e.g. user14" style="font-family:var(--font-mn);"></div>
+        <div class="field"><label>Display Name</label><input type="text" id="new-name" placeholder="Full Name"></div>
+        <div class="field"><label>Role</label>
+          <select id="new-role"><option value="Operator">Operator</option><option value="Supervisor">Supervisor</option><option value="Administrator">Administrator</option></select>
+        </div>
+        <div class="field"><label>Password</label><input type="password" id="new-pass" placeholder="Set password"></div>
+      </div>
+      <button class="btn btn-primary" onclick="umAddUser()">＋ &nbsp;Add User</button>
+    </div>
+  </div>
+
+  <!-- USER TABLE -->
+  <div class="card" style="animation:fadeUp .3s ease .12s both;">
+    <div class="card-header hd-info">
+      <div class="card-header-title">👥 &nbsp;All Users</div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <table class="tbl" id="user-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Sections Assigned</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="user-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- EDIT / ASSIGN PANEL -->
+  <div class="card" id="edit-panel" style="display:none;animation:fadeUp .2s ease both;border-color:var(--accent);">
+    <div class="card-header" style="background:linear-gradient(90deg,#1d4ed8,var(--surface-2));">
+      <div class="card-header-title" style="color:#fff;" id="edit-title">Edit User</div>
+      <div class="card-header-line" style="background:linear-gradient(90deg,rgba(255,255,255,.2),transparent);"></div>
+      <button onclick="umCancelEdit()" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,.5);font-size:18px;line-height:1;margin-left:8px;">✕</button>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:20px;">
+        <div class="field"><label>Display Name</label><input type="text" id="edit-name" placeholder="Full Name"></div>
+        <div class="field"><label>Role</label>
+          <select id="edit-role"><option value="Operator">Operator</option><option value="Supervisor">Supervisor</option><option value="Administrator">Administrator</option></select>
+        </div>
+        <div class="field"><label>New Password <span style="font-weight:400;color:var(--muted);">(blank = keep)</span></label>
+          <input type="password" id="edit-pass" placeholder="Leave blank to keep">
+        </div>
+      </div>
+
+      <div style="font-family:var(--font-mn);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--label);margin-bottom:10px;">Assign Sections</div>
+      <div class="sec-grid" id="sec-checkboxes" style="margin-bottom:18px;"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="umSaveEdit()">✓ &nbsp;Save Changes</button>
+        <button class="btn" onclick="umSelectAll(true)"  style="background:var(--surface-2);color:var(--accent);border:1px solid var(--border);">Select All</button>
+        <button class="btn" onclick="umSelectAll(false)" style="background:var(--surface-2);color:var(--muted);border:1px solid var(--border);">Deselect All</button>
+        <button class="btn" onclick="umCancelEdit()" style="background:var(--surface-2);color:var(--muted);border:1px solid var(--border);">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+  </div>
+
+</div>
+
+<div id="pdf-viewer-overlay" style="display:none;position:fixed;inset:0;z-index:6500;background:rgba(15,23,42,.72);backdrop-filter:blur(2px);" onclick="if(event.target===this)closePdfViewer()">
+  <div style="position:absolute;inset:28px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-lift);display:flex;flex-direction:column;overflow:hidden;">
+    <div style="background:var(--info-dark);padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(255,255,255,.08);">
+      <div style="font-family:var(--font-hd);font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#fff;">PDF Viewer</div>
+      <div id="pdf-viewer-title" style="font-family:var(--font-mn);font-size:10px;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">—</div>
+      <button onclick="closePdfViewer()" style="margin-left:auto;background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:4px;font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 12px;cursor:pointer;">✕ Close</button>
+    </div>
+    <iframe id="pdf-viewer-frame" title="PDF Viewer" style="flex:1;border:none;background:#edf2f7;"></iframe>
+  </div>
+</div>
+
+<!-- ═══════════ MAIN NAV TABS ═══════════ -->
+<div style="background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 28px;display:flex;align-items:center;gap:6px;position:sticky;top:58px;z-index:190;box-shadow:0 2px 8px rgba(0,0,0,.04);">
+  <button id="main-tab-entry" onclick="switchMainTab('entry')" style="font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:14px 22px;border:none;cursor:pointer;background:transparent;color:var(--accent);border-bottom:2.5px solid var(--accent);transition:all .2s;">📋 &nbsp;Work Order Entry</button>
+  <button id="main-tab-db" onclick="switchMainTab('db')" style="font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:14px 22px;border:none;cursor:pointer;background:transparent;color:var(--muted);border-bottom:2.5px solid transparent;transition:all .2s;">🗄 &nbsp;Work Order Database</button>
+  <button id="main-tab-dashboard" onclick="switchMainTab('dashboard')" style="font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:14px 22px;border:none;cursor:pointer;background:transparent;color:var(--muted);border-bottom:2.5px solid transparent;transition:all .2s;">📊 &nbsp;Dashboard</button>
+</div>
+
+<!-- ═══════════ DATABASE VIEW ═══════════ -->
+<div id="main-view-db" style="display:none;padding:24px 28px 60px;">
+
+  <!-- Filter Bar -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="font-family:var(--font-hd);font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-right:4px;">🔍 Filter</div>
+
+    <div style="position:relative;flex:1;min-width:180px;max-width:260px;">
+      <input type="text" id="db-search" placeholder="Search W/O # or Customer…" oninput="renderDB()"
+        style="width:100%;border:1.5px solid var(--border);border-radius:var(--r);padding:8px 12px;font-family:var(--font-mn);font-size:11px;background:var(--surface-2);color:var(--text);outline:none;">
+    </div>
+
+    <select id="db-filter-div" onchange="renderDB()"
+      style="border:1.5px solid var(--border);border-radius:var(--r);padding:8px 28px 8px 10px;font-family:var(--font-mn);font-size:11px;background:var(--surface-2) url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%276%27%3E%3Cpath d=%27M1 1l4 4 4-4%27 stroke=%27%2364748b%27 stroke-width=%271.4%27 fill=%27none%27/%3E%3C/svg%3E') no-repeat right 8px center;color:var(--text);appearance:none;outline:none;cursor:pointer;">
+      <option value="">All Divisions</option>
+      <option value="SARAS - TPP">TPP</option>
+      <option value="SARAS - PB">PB</option>
+      <option value="SARAS - PT">PT</option>
+    </select>
+
+    <select id="db-filter-priority" onchange="renderDB()"
+      style="border:1.5px solid var(--border);border-radius:var(--r);padding:8px 28px 8px 10px;font-family:var(--font-mn);font-size:11px;background:var(--surface-2) url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%276%27%3E%3Cpath d=%27M1 1l4 4 4-4%27 stroke=%27%2364748b%27 stroke-width=%271.4%27 fill=%27none%27/%3E%3C/svg%3E') no-repeat right 8px center;color:var(--text);appearance:none;outline:none;cursor:pointer;">
+      <option value="">All Priorities</option>
+      <option value="CRITICAL">Critical</option>
+      <option value="HIGH">High</option>
+      <option value="MED">Medium</option>
+      <option value="LOW">Low</option>
+    </select>
+
+    <div style="margin-left:auto;font-family:var(--font-mn);font-size:11px;color:var(--muted);">
+      <span id="db-count-label">0 records</span>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);overflow:hidden;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;min-width:900px;">
+        <thead>
+          <tr style="background:#eef2f9;border-bottom:2px solid var(--border);">
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;white-space:nowrap;">#</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;cursor:pointer;white-space:nowrap;" onclick="dbSort('id')">W/O # ↕</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;white-space:nowrap;">Customer</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;white-space:nowrap;">Division</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;white-space:nowrap;">Priority</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;cursor:pointer;white-space:nowrap;" onclick="dbSort('deliveryDate')">Delivery Date ↕</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;white-space:nowrap;">Remaining Days</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;white-space:nowrap;">Progress</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:left;cursor:pointer;white-space:nowrap;" onclick="dbSort('savedAt')">Saved At ↕</th>
+            <th style="font-family:var(--font-mn);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);padding:11px 14px;text-align:center;white-space:nowrap;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="db-tbody"></tbody>
+      </table>
+    </div>
+    <div id="db-empty" style="display:none;padding:40px;text-align:center;color:var(--muted);font-family:var(--font-mn);font-size:13px;">No work orders found</div>
+  </div>
+</div>
+
+<!-- ═══════════ DASHBOARD VIEW ═══════════ -->
+<div id="main-view-dashboard" style="display:none;padding:24px 28px 60px;">
+
+  <!-- Chart Card -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-card);padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-family:var(--font-hd);font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text);">Order Entry vs Dispatch</div>
+        <div style="font-family:var(--font-mn);font-size:11px;color:var(--muted);margin-top:3px;">Monthly trend — orders created and dispatched</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:18px;">
+        <div style="display:flex;align-items:center;gap:6px;"><div style="width:28px;height:3px;background:#2563eb;border-radius:2px;"></div><span style="font-family:var(--font-mn);font-size:11px;color:var(--muted);">Order Entry</span></div>
+        <div style="display:flex;align-items:center;gap:6px;"><div style="width:28px;height:3px;background:#10b981;border-radius:2px;"></div><span style="font-family:var(--font-mn);font-size:11px;color:var(--muted);">Dispatch</span></div>
+        <select id="dash-chart-range" onchange="renderDashboard()" style="border:1.5px solid var(--border);border-radius:var(--r);padding:6px 10px;font-family:var(--font-mn);font-size:11px;background:var(--surface-2);color:var(--text);outline:none;cursor:pointer;">
+          <option value="6">Last 6 Months</option>
+          <option value="12" selected>Last 12 Months</option>
+          <option value="24">Last 24 Months</option>
+        </select>
+      </div>
+    </div>
+    <div style="position:relative;height:340px;">
+      <canvas id="dash-line-chart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════ ENTRY VIEW ═══════════ -->
+<div id="main-view-entry">
+<!-- ═══════════ ENTRY FORM ═══════════ -->
+
+  <!-- ORDER INFO -->
+  <div class="card" id="order-info-card" style="overflow:visible;">
+    <div class="card-header hd-info">
+      <div class="card-header-title">⬡ &nbsp;Order Information</div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="card-body">
+      <!-- WO Search + Division filter row -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="position:relative;flex:1;min-width:200px;max-width:320px;">
+          <div style="display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--r);padding:7px 11px;transition:border-color .15s;" id="wo-srch-wrap">
+            <span style="color:var(--muted);font-size:13px;flex-shrink:0;">🔍</span>
+            <input type="text" id="entry-search-inp"
+              placeholder="Search W/O # to load…"
+              oninput="entrySearchFilter()"
+              onfocus="document.getElementById('wo-srch-wrap').style.borderColor='var(--accent)'"
+              onblur="setTimeout(()=>{document.getElementById('wo-srch-wrap').style.borderColor='var(--border)';document.getElementById('entry-search-results').style.display='none';},200)"
+              style="background:transparent;border:none;outline:none;color:var(--text);font-family:var(--font-mn);font-size:12px;flex:1;letter-spacing:.5px;">
+            <span id="entry-search-clear" onclick="clearEntrySearch()" style="cursor:pointer;color:var(--muted);font-size:15px;display:none;" title="Clear">✕</span>
+          </div>
+          <div id="entry-search-results" style="display:none;position:absolute;z-index:600;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-lift);max-height:240px;overflow-y:auto;width:100%;margin-top:3px;left:0;"></div>
+        </div>
+        <select id="entry-div-filter" onchange="entrySearchFilter()"
+          style="border:1.5px solid var(--border);border-radius:var(--r);padding:7px 28px 7px 10px;font-family:var(--font-mn);font-size:11px;background:var(--surface-2) url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%2364748b\' stroke-width=\'1.4\' fill=\'none\'/%3E%3C/svg%3E') no-repeat right 8px center;color:var(--text);appearance:none;cursor:pointer;outline:none;letter-spacing:1px;">
+          <option value="">All Divisions</option>
+          <option value="SARAS - TPP">TPP</option>
+          <option value="SARAS - PB">PB</option>
+          <option value="SARAS - PT">PT</option>
+        </select>
+        <button class="btn btn-primary" onclick="newEntry()" style="height:38px;white-space:nowrap;font-size:13px;">＋ &nbsp;New Entry</button>
+        <button class="btn btn-save" onclick="saveForm()" style="height:38px;white-space:nowrap;font-size:13px;">✦ &nbsp;Save Entry</button>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-family:var(--font-mn);font-size:11px;color:var(--muted);white-space:nowrap;">PDF:</span>
+          <span id="attach-name" style="font-family:var(--font-mn);font-size:11px;color:var(--text);min-width:80px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">None</span>
+          <input type="file" id="attach-input" accept=".pdf,application/pdf" style="display:none;">
+          <button class="btn btn-save" id="btn-attach-pdf" onclick="openAttachmentPicker()" style="height:38px;white-space:nowrap;font-size:13px;">📎 &nbsp;Attach PDF</button>
+          <button class="btn btn-save" id="btn-view-pdf" onclick="viewAttachment()" disabled style="height:38px;white-space:nowrap;font-size:13px;opacity:.5;cursor:not-allowed;">↗ &nbsp;Open PDF</button>
+          <button class="btn btn-outline" id="btn-delete-pdf" onclick="deleteAttachment()" disabled style="height:38px;white-space:nowrap;font-size:13px;opacity:.5;cursor:not-allowed;">✕ &nbsp;Remove PDF</button>
+        </div>
+      </div>
+
+      <div class="info-grid" style="overflow:visible;">
+        <div class="field"><label>W/O # <span class="req">*</span></label><input type="text" id="wo" placeholder="WO-2024-001"></div>
+        <div class="field">
+          <label>W/O Created Date</label>
+          <input type="text" id="po-entry-date" class="date-txt" placeholder="DDMM → DD/MM/YYYY" maxlength="10" autocomplete="off">
+        </div>
+        <div class="field" style="position:relative;z-index:40;overflow:visible;">
+          <label>Customer Name <span class="req">*</span></label>
+          <input type="text" id="customer" placeholder="Type to search customer name" autocomplete="off" oninput="handleCustomerInput()" onfocus="handleCustomerFocus()" onblur="handleCustomerBlur()" onkeydown="handleCustomerKeydown(event)">
+          <div id="customer-list" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:5000;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-lift);max-height:220px;overflow-y:auto;"></div>
+        </div>
+        <div class="field">
+          <label>Division <span class="req">*</span></label>
+          <select id="division">
+            <option value="">— Select Division —</option>
+            <option value="SARAS - TPP">SARAS – TPP</option>
+            <option value="SARAS - PB">SARAS – PB</option>
+            <option value="SARAS - PT">SARAS – PT</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Priority <span class="req">*</span></label>
+          <select id="priority" onchange="colorPriority(this)">
+            <option value="">— Select Priority —</option>
+            <option value="CRITICAL">🔴&nbsp; CRITICAL</option>
+            <option value="HIGH">🟠&nbsp; HIGH</option>
+            <option value="MED">🟡&nbsp; MEDIUM</option>
+            <option value="LOW">🟢&nbsp; LOW</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Coating Required</label>
+          <select id="coating" onchange="onCoatingChange(this)"><option value="">— Select —</option><option>Yes</option><option>No</option></select>
+        </div>
+        <div class="field">
+          <label>Electrode Required</label>
+          <select id="electrode" onchange="onElectrodeChange(this)">
+            <option value="">— Select —</option><option value="Yes">Yes</option><option value="No">No</option>
+          </select>
+        </div>
+        <div class="field"><label>Order Qty</label><input type="number" id="orderqty" placeholder="0" min="0"></div>
+        <div class="field"><label>Order Value (₹)</label><input type="number" id="ordervalue" placeholder="0.00" min="0" step="0.01"></div>
+        <div class="field">
+          <label>P.O Advance Received</label>
+          <select id="po-advance" onchange="onPOAdvanceChange(this)"><option value="">— Select —</option><option value="Yes">Yes</option><option value="No">No</option></select>
+        </div>
+        <div class="field">
+          <label>Trail</label>
+          <select id="trail" onchange="onTrailChange(this)">
+            <option value="">— Select —</option>
+            <option value="Required">Required</option>
+            <option value="Not Required">Not Required</option>
+          </select>
+        </div>
+        <div class="field" id="po-datetime-field" style="display:none;">
+          <label>Received On</label>
+          <input type="text" id="po-datetime" readonly style="font-family:var(--font-mn);font-size:12px;background:#f0fdf4;color:#065f46;border-color:rgba(16,185,129,.4);font-weight:600;cursor:default;letter-spacing:.3px;">
+        </div>
+        <div class="field wide3" id="design-field">
+          <label>Design <span class="req">*</span></label>
+          <div class="design-row">
+            <div class="design-sel">
+              <select id="design" onchange="onDesignChange(this)" style="width:100%">
+                <option value="">— Select Design Type —</option>
+                <option value="Standard Drawing">Standard Drawing</option>
+                <option value="Custom Drawing">Custom Drawing</option>
+              </select>
+            </div>
+            <div class="custom-wrap" id="custom-wrap">
+              <input type="text" id="custom-note" class="date-txt" placeholder="DDMM → DD/MM/YYYY" maxlength="10" autocomplete="off" disabled>
+            </div>
+          </div>
+        </div>
+        <div class="field"><label>W/O Issue Date <span class="req">*</span></label><input type="text" id="del-start" class="date-txt" placeholder="DDMM → DD/MM/YYYY" maxlength="10" autocomplete="off"></div>
+        <div class="field"><label>No. of Weeks <span class="req">*</span></label><input type="number" id="del-weeks" placeholder="e.g. 4" min="1" oninput="calcDelivery()" style="width:100%"></div>
+        <div class="field"><label>Delivery Date</label><div class="delivery-date-result empty" id="del-result">Auto-calculated</div></div>
+        <div class="field" id="del-skipped-field" style="display:none;">
+          <label>Skipped Days</label>
+          <select class="skipped-select" id="del-skipped-sel" size="1"><option value="">— No skipped days —</option></select>
+          <span class="skipped-count-badge" id="del-skip-badge" style="display:none;"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STORE BLANKS -->
+  <div class="card" id="store-blanks-card">
+    <div class="card-header" style="background:linear-gradient(90deg,#1e3a5f,#dbeafe);">
+      <div class="card-header-title" style="color:#fff;">🗃 &nbsp;Store Blanks</div>
+      <div class="card-header-line" style="background:linear-gradient(90deg,rgba(255,255,255,.2),transparent);"></div>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 16px;align-items:start;">
+        <div class="field">
+          <label>Store Blanks AQTY <span class="req">*</span></label>
+          <input type="number" id="storeblanks" placeholder="0" min="0" onblur="calcShortage()" style="font-family:var(--font-mn);font-size:13px;letter-spacing:.3px;">
+        </div>
+        <div class="field">
+          <label>Shortage of Store Blank</label>
+          <input type="number" id="shortage" placeholder="Auto-calculated" min="0" readonly style="background:#f0f9ff;color:var(--accent);font-weight:700;cursor:default;border-color:rgba(37,99,235,.25);font-family:var(--font-mn);font-size:13px;">
+          <span class="auto-fill-note" id="af-note">Auto-filled in BSF Item Yet to Be Received</span>
+        </div>
+        <div class="field">
+          <label>Bin Number</label>
+          <input type="text" id="binNumber" placeholder="Enter bin number" style="font-family:var(--font-mn);font-size:13px;letter-spacing:.3px;">
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="margin:18px 0 14px;border-top:1px solid var(--border);"></div>
+
+      <!-- Received Shortage Blank from Core Team -->
+      <div style="font-family:var(--font-hd);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--core-hd);margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--core-acc);display:inline-block;"></span>
+        Received Shortage Blank from Core Team
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 16px;align-items:start;">
+        <div class="field">
+          <label>Status</label>
+          <select id="rcvd-shortage-status" class="req-select" onchange="onRcvdShortageChange(this)">
+            <option value="">— Select —</option>
+            <option value="Inspected and Received">Inspected and Received</option>
+            <option value="Not Received">Not Received</option>
+          </select>
+        </div>
+        <div class="field" id="rcvd-shortage-date-wrap" style="display:none;">
+          <label>Received Date</label>
+          <input type="text" id="rcvd-shortage-date" class="date-txt" placeholder="DDMM → DD/MM/YYYY" maxlength="10" autocomplete="off">
+        </div>
+        <div class="field" id="rcvd-shortage-qty-wrap" style="display:none;">
+          <label>Received Qty</label>
+          <input type="number" id="rcvd-shortage-qty" placeholder="0" min="0" style="font-family:var(--font-mn);font-size:13px;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CORE TEAM -->
+  <div class="card" id="core-card">
+    <div class="card-header hd-core">
+      <div class="card-header-title">⚙ &nbsp;Core Team</div>
+      <div class="core-lock-overlay">
+        <div class="lock-strip"><span class="lock-strip-icon">🔒</span><span class="lock-strip-text">Locked — enter shortage to unlock</span></div>
+      </div>
+      <div class="card-header-badge" id="core-badge">🔒 LOCKED</div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="card-body"><div class="process-grid" id="core-grid"></div></div>
+  </div>
+
+  <!-- CUSTOM DESIGN DATES — shown only when Custom Drawing is selected -->
+  <div class="card" id="custom-design-card" style="display:none;border-color:rgba(37,99,235,.3);">
+    <div class="card-header" style="background:linear-gradient(90deg,#1e3a8a,#dbeafe);">
+      <div class="card-header-title" style="color:#fff;">✏ &nbsp;Core Team Custom</div>
+      <div class="card-header-line" style="background:linear-gradient(90deg,rgba(255,255,255,.2),transparent);"></div>
+    </div>
+    <div class="card-body">
+      <div class="process-grid" id="custom-design-grid"></div>
+    </div>
+  </div>
+
+  <!-- EDGE TEAM -->
+  <div class="card">
+    <div class="card-header hd-edge">
+      <div class="card-header-title">◈ &nbsp;Edge Team</div>
+      <div class="card-header-badge">9 PROCESSES</div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="card-body">
+      <div id="edge-bin-card" style="position:relative;"><div class="section-tag"><span>Bin Numbers</span></div>
+      <div class="process-grid" id="edge-bin-grid" style="margin-bottom:16px"></div>
+      </div><div id="edge-process-card" style="position:relative;"><div class="section-tag"><span>Process Dates</span></div>
+      <div class="process-grid" id="edge-grid"></div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+
+  <div class="card">
+    <div class="card-header" style="background:linear-gradient(90deg,#1e1b4b,#f7f9fd)">
+      <div class="card-header-title" style="color:#fff">◎ &nbsp;Progress Bar</div>
+      <div class="card-header-line" style="background:linear-gradient(90deg,rgba(255,255,255,.2),transparent)"></div>
+    </div>
+    <div class="progress-section">
+      <div class="big-bar-wrap">
+        <div class="big-bar-labels">
+          <span class="big-bar-title">Overall Completion</span>
+          <span class="big-bar-pct" id="pct-label">0%</span>
+        </div>
+        <div class="big-bar-outer"><div class="big-bar-inner" id="big-bar" style="width:0%"></div></div>
+        <div class="big-bar-seg">
+          <div class="seg-item"><div class="seg-dot" style="background:var(--success)"></div><span id="seg-done">0 completed</span></div>
+          <div class="seg-item"><div class="seg-dot" style="background:var(--warn)"></div><span id="seg-prog">0 in progress</span></div>
+          <div class="seg-item"><div class="seg-dot" style="background:#e2e8f0"></div><span id="seg-pend">0 pending</span></div>
+        </div>
+      </div>
+      <div class="prog-counters">
+        <div class="counter-box c-done"><div class="c-val" id="cnt-done">0</div><div class="c-lbl">Done</div></div>
+        <div class="counter-box c-prog"><div class="c-val" id="cnt-prog">0</div><div class="c-lbl">Active</div></div>
+        <div class="counter-box c-pend"><div class="c-val" id="cnt-pend">0</div><div class="c-lbl">Pending</div></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<!-- TOAST -->
+<div class="toast" id="toast">
+  <span class="toast-ico" id="t-ico">✓</span>
+  <span id="t-msg">Saved</span>
+</div>
+
+</div><!-- /main-view-entry -->
+
+<!-- ═══════════ WO VIEW MODAL ═══════════ -->
+<div id="wo-view-overlay" style="display:none;position:fixed;inset:0;z-index:6000;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);" onclick="if(event.target===this)closeWOView()"></div>
+<div id="wo-view-panel" style="display:none;position:fixed;top:0;right:-100%;width:90vw;max-width:1100px;height:100vh;background:var(--bg);z-index:6001;overflow-y:auto;box-shadow:-8px 0 48px rgba(0,0,0,.3);transition:right .3s cubic-bezier(.4,0,.2,1);">
+
+  <!-- Header -->
+  <div style="background:var(--info-dark);padding:16px 28px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:1;border-bottom:1.5px solid var(--success);">
+    <div style="font-family:var(--font-hd);font-size:14px;font-weight:700;letter-spacing:2px;color:#34d399;text-transform:uppercase;">👁 Work Order Details</div>
+    <div id="wov-wo-id" style="font-family:var(--font-mn);font-size:13px;color:rgba(255,255,255,.6);letter-spacing:1px;"></div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <button onclick="dbEditRecord(document.getElementById('wov-wo-id').textContent);closeWOView();" style="background:rgba(37,99,235,.2);color:#93c5fd;border:1px solid rgba(37,99,235,.35);border-radius:4px;font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 14px;cursor:pointer;">✎ Edit This W/O</button>
+      <button onclick="closeWOView()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:4px;font-family:var(--font-hd);font-size:9px;font-weight:700;letter-spacing:1px;padding:6px 14px;cursor:pointer;">✕ Close</button>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div id="wo-view-content" style="padding:24px 28px 60px;"></div>
+</div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

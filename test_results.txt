@@ -1,0 +1,54 @@
+Starting tests...
+[
+  {
+    "step": "1. GET /health",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "2. GET /api/login-users",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "3. POST /api/login",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "4. GET /api/session",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "5. GET /api/customers",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "6. GET /api/orders",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "7. POST /api/orders (SMOKE-1777039131)",
+    "status": 500,
+    "pass": false
+  },
+  {
+    "step": "8. GET /api/orders (Verify ID)",
+    "status": 200,
+    "pass": false
+  },
+  {
+    "step": "9. DELETE /api/orders/SMOKE-1777039131",
+    "status": 200,
+    "pass": true
+  },
+  {
+    "step": "10. GET /api/orders (Verify Removed)",
+    "status": 200,
+    "pass": true
+  }
+]
+OVERALL: FAIL
