@@ -3,7 +3,7 @@ Sara's Work Management System — Flask Backend
 Serves the frontend and connects it to PostgreSQL
 """
 
-from flask import Flask, request, jsonify, render_template, abort, session, send_from_directory
+from flask import Flask, request, jsonify, render_template, abort, session, send_from_directory, send_file
 from flask_socketio import SocketIO
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 from openpyxl import load_workbook
 import psycopg2  # type: ignore[import-not-found]
 import os, re, json, datetime, secrets, sys, shutil, configparser
+from io import BytesIO
 from psycopg2.extras import RealDictCursor  # type: ignore[import-not-found]
 
 app = Flask(__name__)
@@ -202,6 +203,7 @@ def _ensure_upload_folder():
 def _ensure_attachment_schema():
     conn = get_db()
     try:
+        # attachment_path column (legacy)
         row = conn.execute(
             """
             SELECT 1
@@ -212,7 +214,32 @@ def _ensure_attachment_schema():
         ).fetchone()
         if not row:
             conn.execute("ALTER TABLE work_orders ADD COLUMN attachment_path TEXT")
-            conn.commit()
+
+        # attachment_data column (PDF binary stored in DB)
+        row2 = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+            """,
+            ("work_orders", "attachment_data"),
+        ).fetchone()
+        if not row2:
+            conn.execute("ALTER TABLE work_orders ADD COLUMN attachment_data BYTEA")
+
+        # attachment_filename column
+        row3 = conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+            """,
+            ("work_orders", "attachment_filename"),
+        ).fetchone()
+        if not row3:
+            conn.execute("ALTER TABLE work_orders ADD COLUMN attachment_filename TEXT")
+
+        conn.commit()
     finally:
         conn.close()
 
@@ -798,13 +825,13 @@ def get_orders():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT data_json, attachment_path FROM work_orders ORDER BY saved_at DESC"
+            "SELECT data_json, attachment_filename FROM work_orders ORDER BY saved_at DESC"
         ).fetchall()
         orders = []
         for row in rows:
             record = json.loads(row["data_json"])
-            record["attachmentPath"] = row["attachment_path"] or None
-            record["attachmentName"] = _attachment_display_name(row["attachment_path"])
+            record["attachmentPath"] = row["attachment_filename"] or None
+            record["attachmentName"] = row["attachment_filename"] or None
             orders.append(record)
         return jsonify(orders)
     finally:
@@ -898,11 +925,12 @@ def save_order():
         conn.close()
 
 
+# ── PDF stored in PostgreSQL BYTEA column ─────────────────────────────────────
+
 @app.route("/api/orders/<path:order_id>/attachment", methods=["POST"])
 @login_required
 def upload_attachment(order_id):
     _ensure_attachment_schema()
-    _ensure_upload_folder()
     upload = request.files.get("file")
     if not upload or not upload.filename:
         return jsonify({"error": "No PDF file was provided"}), 400
@@ -911,7 +939,6 @@ def upload_attachment(order_id):
     if not original_name or not original_name.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF files are allowed"}), 400
 
-    # Read actual bytes to enforce size limit (Content-Length header can be spoofed)
     pdf_data = upload.stream.read(MAX_UPLOAD_BYTES + 1)
     if len(pdf_data) > MAX_UPLOAD_BYTES:
         return jsonify({"error": "PDF must be 10 MB or smaller"}), 413
@@ -919,27 +946,25 @@ def upload_attachment(order_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT attachment_path FROM work_orders WHERE id = ?",
+            "SELECT id FROM work_orders WHERE id = ?",
             (order_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "Save the work order before attaching a PDF"}), 404
 
-        stamp = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
-        stored_name = f"{secure_filename(order_id) or 'order'}__{stamp}___{original_name}"
-        with open(os.path.join(UPLOAD_FOLDER, stored_name), "wb") as _pdf_f:
-            _pdf_f.write(pdf_data)
-        _remove_attachment_file(row["attachment_path"])
-        conn.execute(
-            "UPDATE work_orders SET attachment_path = ?, updated_at = ? WHERE id = ?",
-            (stored_name, datetime.datetime.utcnow().isoformat(timespec="seconds"), order_id)
-        )
+        # Store PDF binary directly in PostgreSQL
+        with conn._conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE work_orders SET attachment_data = %s, attachment_filename = %s, updated_at = %s WHERE id = %s",
+                (psycopg2.Binary(pdf_data), original_name,
+                 datetime.datetime.utcnow().isoformat(timespec="seconds"), order_id)
+            )
         conn.commit()
         socketio.emit("data_changed", {"action": "attachment_saved", "id": order_id})
         return jsonify({
             "ok": True,
-            "attachmentPath": stored_name,
-            "filename": _attachment_display_name(stored_name),
+            "attachmentPath": original_name,
+            "filename": original_name,
         })
     finally:
         conn.close()
@@ -952,25 +977,22 @@ def get_attachment(order_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT attachment_path FROM work_orders WHERE id = ?",
+            "SELECT attachment_data, attachment_filename FROM work_orders WHERE id = ?",
             (order_id,)
         ).fetchone()
     finally:
         conn.close()
 
-    if not row or not row["attachment_path"]:
+    if not row or not row["attachment_data"]:
         return jsonify({"error": "No PDF is attached to this work order"}), 404
 
-    stored_name = os.path.basename(row["attachment_path"])
-    file_path = os.path.join(UPLOAD_FOLDER, stored_name)
-    if not os.path.exists(file_path):
-        return jsonify({"error": "Attached PDF file was not found"}), 404
-
-    return send_from_directory(
-        UPLOAD_FOLDER,
-        stored_name,
+    filename = row["attachment_filename"] or "attachment.pdf"
+    pdf_bytes = bytes(row["attachment_data"])
+    return send_file(
+        BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=False,
+        download_name=filename
     )
 
 
@@ -981,21 +1003,20 @@ def delete_attachment(order_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT attachment_path FROM work_orders WHERE id = ?",
+            "SELECT attachment_data FROM work_orders WHERE id = ?",
             (order_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "Work order not found"}), 404
-        if not row["attachment_path"]:
+        if not row["attachment_data"]:
             return jsonify({"error": "No PDF is attached to this work order"}), 404
 
-        stored_name = row["attachment_path"]
-        conn.execute(
-            "UPDATE work_orders SET attachment_path = NULL, updated_at = ? WHERE id = ?",
-            (datetime.datetime.utcnow().isoformat(timespec="seconds"), order_id)
-        )
+        with conn._conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE work_orders SET attachment_data = NULL, attachment_filename = NULL, updated_at = %s WHERE id = %s",
+                (datetime.datetime.utcnow().isoformat(timespec="seconds"), order_id)
+            )
         conn.commit()
-        _remove_attachment_file(stored_name)
         socketio.emit("data_changed", {"action": "attachment_deleted", "id": order_id})
         return jsonify({"ok": True})
     finally:
@@ -1013,14 +1034,8 @@ def delete_order(order_id):
         ).fetchone()
         if not user or not user['is_admin']:
             return jsonify({'error': 'Only administrators can delete orders'}), 403
-        row = conn.execute(
-            "SELECT attachment_path FROM work_orders WHERE id = ?",
-            (order_id,)
-        ).fetchone()
         conn.execute("DELETE FROM work_orders WHERE id = ?", (order_id,))
         conn.commit()
-        if row:
-            _remove_attachment_file(row["attachment_path"])
         socketio.emit("data_changed", {"action": "deleted", "id": order_id})
         return jsonify({"ok": True})
     finally:
