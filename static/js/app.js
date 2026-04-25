@@ -1352,7 +1352,13 @@ function saveForm(){
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(record)
   })
-  .then(r => r.json().then(j => ({ ok: r.ok, body: j })))
+  .then(async r => {
+    const text = await r.text();
+    let body = {};
+    try { body = text ? JSON.parse(text) : {}; }
+    catch { body = { error: text?.startsWith('<') ? 'Server error while saving (check logs)' : text || 'Save failed' }; }
+    return { ok: r.ok, body };
+  })
   .then(({ ok, body }) => {
     if (!ok) throw new Error(body.error || 'Save failed');
     showToast('✦', `W/O "${wo}" saved successfully`);

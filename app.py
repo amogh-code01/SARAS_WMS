@@ -225,6 +225,26 @@ def _normalize_customer_code(value):
     return " ".join(str(value or "").strip().split())
 
 
+def _to_int_or_none(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float_or_none(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
 def _ensure_customers_table():
     conn = get_db()
     try:
@@ -803,6 +823,12 @@ def save_order():
     conn = get_db()
     try:
         customer_name = _normalize_customer_name(record.get("customer", ""))
+        order_qty = _to_int_or_none(record.get("orderQty"))
+        order_value = _to_float_or_none(record.get("orderValue"))
+        store_blanks = _to_int_or_none(record.get("storeAQTY"))
+        shortage = _to_int_or_none(record.get("shortage"))
+        rcvd_qty = _to_int_or_none(record.get("rcvdShortageQty"))
+        del_weeks = _to_int_or_none(record.get("weeks"))
         conn.execute("""
             INSERT INTO work_orders
                 (id, wo, customer, division, priority, coating, electrode,
@@ -838,19 +864,19 @@ def save_order():
             "priority":      record.get("priority", ""),
             "coating":       record.get("coating", ""),
             "electrode":     record.get("electrode", ""),
-            "order_qty":     record.get("orderQty"),
-            "order_value":   record.get("orderValue"),
+            "order_qty":     order_qty,
+            "order_value":   order_value,
             "po_advance":    record.get("poAdvance", ""),
             "trail":         record.get("trail", ""),
             "design":        record.get("design", ""),
-            "store_blanks":  record.get("storeAQTY"),
-            "shortage":      record.get("shortage"),
+            "store_blanks":  store_blanks,
+            "shortage":      shortage,
             "bin_number":    record.get("binNumber", ""),
             "rcvd_status":   record.get("rcvdShortageStatus", ""),
             "rcvd_date":     record.get("rcvdShortageDate", ""),
-            "rcvd_qty":      record.get("rcvdShortageQty"),
+            "rcvd_qty":      rcvd_qty,
             "del_start":     record.get("woIssueDate", ""),
-            "del_weeks":     record.get("weeks"),
+            "del_weeks":     del_weeks,
             "delivery_date": record.get("deliveryDate", ""),
             "po_entry_date": record.get("poEntryDate", ""),
             "data_json":     json.dumps(record),
@@ -865,6 +891,9 @@ def save_order():
         if customer_name:
             socketio.emit("customers_changed", {})
         return jsonify({"ok": True, "id": record["id"]})
+    except Exception as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 
