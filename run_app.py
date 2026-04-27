@@ -68,8 +68,12 @@ def _is_our_server(host="127.0.0.1", port=5000, timeout=1.0):
     try:
         with urlopen(req, timeout=timeout) as resp:
             content = resp.read(1024).decode('utf-8', errors='ignore')
-            # index.html title contains "SWM V1" in this project
-            return "SWM V1" in content or "SWM V1 — Work Order Management" in content
+            # index.html title/branding markers for this project
+            return (
+                "saraswms" in content
+                or "SWM V1" in content
+                or "SWM V1 — Work Order Management" in content
+            )
     except (URLError, HTTPError, OSError):
         return False
 
