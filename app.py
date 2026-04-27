@@ -472,14 +472,11 @@ def _bootstrap():
         if total_users == 0:
             conn.execute(
                 "INSERT INTO app_users VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP::text)",
-                ('admin1', 'Admin 1', 'Administrator',
+                ('admin1', 'admin', 'Administrator',
                  generate_password_hash('Admin@1234'), 1, '[]')
             )
-            conn.execute(
-                "INSERT INTO app_users VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP::text)",
-                ('admin2', 'Admin 2', 'Administrator',
-                 generate_password_hash('Admin@5678'), 1, '[]')
-            )
+        conn.execute("UPDATE app_users SET name = ? WHERE user_key = ?", ('admin', 'admin1'))
+        conn.execute("DELETE FROM app_users WHERE user_key = ?", ('admin2',))
         conn.commit()
     finally:
         conn.close()
